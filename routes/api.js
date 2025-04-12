@@ -1,10 +1,11 @@
-const express = require("express");
-const router = express.Router();
+var express = require('express');
+var router = express.Router();
 
-const geoLocationController = require("../controllers/api/geoLocation");
-const exchangeRateController = require("../controllers/api/exchangeRate");
+const ApiController = require('../controllers/api');
 
-router.use("/get-location", geoLocationController.getUserLocation);
-router.use("/get-exchange-rates", exchangeRateController.getAllCurrencyRates);
+router.get('/countries', ApiController.getCountries);
+router.get('/languages', ApiController.getLanguages);
+
 
 module.exports = router;
+    

@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
-const { secretKey } = require("../config/database");
 
 function authenticateToken(req, res, next) {
+  const secretKey = process.env.SECRET_KEY;
   // Retrieve the Authorization header from the request
   const authHeader = req.headers.authorization;
 
@@ -21,8 +21,6 @@ function authenticateToken(req, res, next) {
       // If there's an error verifying the token, respond with a 403 status code
       return res.status(403).json({ error: "Forbidden: Invalid token" });
     }
-
-    console.log("User authenticated:", user);
 
     // Attach the user information to the request object
     req.user = user;
