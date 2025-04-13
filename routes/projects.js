@@ -18,6 +18,6 @@ router.get("/mapped-suppliers", ProjectController.getMappedSuppliers);
 router.put("/group/update", ProjectController.updateGroupProject);
 router.get("/details", ProjectController.getProjectById);
 router.get("/group/details", ProjectController.getGroupProjectDetails);
-router.post("/clone-project-details", ProjectController.cloneProjectDetails)
+router.post("/clone-project", ProjectController.cloneCreateProject)
 
 module.exports = router;

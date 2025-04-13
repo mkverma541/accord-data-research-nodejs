@@ -203,6 +203,167 @@ async function createProject(req, res) {
   }
 }
 
+async function cloneCreateProject(req, res) {
+  const { project_id } = req.body;
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    if (!project_id) {
+      return res.status(400).json({
+        message: "Project ID is missing",
+        status: "error",
+      });
+    }
+
+    // Fetch the project details
+    const [project] = await connection.query(
+      `SELECT * FROM projects WHERE project_id = ?`,
+      [project_id]
+    );
+
+    if (project.length === 0) {
+      return res.status(404).json({
+        message: "Project not found",
+        status: "error",
+      });
+    }
+
+    const projectDetails = project[0];
+
+    // Fetch group project details if applicable
+    let groupProjectDetails = null;
+
+    if (projectDetails.group_project_id) {
+      const [groupProject] = await connection.query(
+        `SELECT * FROM group_projects WHERE project_id = ?`,
+        [projectDetails.group_project_id]
+      );
+      groupProjectDetails = groupProject[0];
+    }
+
+    // Generate new project codes
+    let group_project_code = null;
+    let project_code = null;
+    let groupProjectId = null;
+
+    if (projectDetails.project_type === "group") {
+      group_project_code = await generateGroupProjectCode();
+      project_code = `${group_project_code}01`;
+
+      const groupProjectQuery = `
+        INSERT INTO group_projects (project_code, project_name, project_description, client_id)
+        VALUES (?, ?, ?, ?)
+      `;
+
+      const [insertGroupProjectId] = await connection.query(groupProjectQuery, [
+        group_project_code,
+        groupProjectDetails
+          ? `${groupProjectDetails.project_name} (Clone)`
+          : null,
+        groupProjectDetails
+          ? groupProjectDetails.project_description
+          : null,
+        projectDetails.client_id,
+      ]);
+
+      groupProjectId = insertGroupProjectId.insertId;
+    } else {
+      project_code = await generateProjectCode();
+    }
+
+    // YYYY-MM-DD
+    
+    const today = new Date().toISOString().split("T")[0];
+
+    // Clone the project details
+    const query = `
+      INSERT INTO projects (
+        project_code, project_type, start_date, end_date, is_dynamic_thanks, group_project_id,
+        project_name, project_manager, description, loi, ir, sample_size, respondent_click_quota, 
+        project_cpi, supplier_cpi, is_pre_screen, is_geo_location, is_unique_ip, unique_ip_count, 
+        is_speeder, speeder_count, is_exclude, is_dynamic_thanks_url, is_tsign, is_mobile, 
+        is_tablet, is_desktop, notes, client_id, supplier_id, country_code, language_code, project_category, 
+        currency, status, survey_live_link, survey_test_link, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `;
+
+    const [insertResult] = await connection.query(query, [
+      project_code,
+      projectDetails.project_type,
+      today,
+      today,
+      projectDetails.is_dynamic_thanks,
+      groupProjectId,
+      `${projectDetails.project_name} (Clone)`,
+      projectDetails.project_manager,
+      projectDetails.description,
+      projectDetails.loi,
+      projectDetails.ir,
+      projectDetails.sample_size,
+      projectDetails.respondent_click_quota,
+      projectDetails.project_cpi,
+      projectDetails.supplier_cpi,
+      projectDetails.is_pre_screen,
+      projectDetails.is_geo_location,
+      projectDetails.is_unique_ip,
+      projectDetails.unique_ip_count,
+      projectDetails.is_speeder,
+      projectDetails.speeder_count,
+      projectDetails.is_exclude,
+      projectDetails.is_dynamic_thanks_url,
+      projectDetails.is_tsign,
+      projectDetails.is_mobile,
+      projectDetails.is_tablet,
+      projectDetails.is_desktop,
+      projectDetails.notes,
+      projectDetails.client_id,
+      projectDetails.supplier_id,
+      projectDetails.country_code,
+      projectDetails.language_code,
+      projectDetails.project_category,
+      projectDetails.currency,
+      1, // Default status
+      null, // survey_live_link
+      null, // survey_test_link
+    ]);
+
+    const newProjectId = insertResult.insertId;
+
+    // Add supplier mapping with unique stid generation
+    const [[defaultSupplier]] = await connection.query(
+      `SELECT supplier_id FROM suppliers WHERE is_default = 1 LIMIT 1`
+    );
+
+    if (!defaultSupplier) {
+      throw new Error("Default supplier not found.");
+    }
+
+    const stid = uuidv4().replace(/-/g, "").substring(0, 8);
+
+    await connection.query(
+      `INSERT INTO project_suppliers (project_id, supplier_id, quota, click_quota, cpi, redirection_type, stid) VALUES (?, ?, 0, 0, 0, 1, ?)`,
+      [newProjectId, defaultSupplier.supplier_id, stid]
+    );
+
+    await connection.commit();
+    res.status(201).json({
+      message: "Project cloned and created successfully",
+      status: "success",
+      project_id: newProjectId,
+    });
+  } catch (err) {
+    console.error(err);
+    await connection.rollback();
+    res.status(500).json({ message: "Internal server error", status: "error" });
+  } finally {
+    connection.release();
+  }
+}
+
+
 async function getGroupProjectDetails(req, res) {
   try {
     const { group_project_id } = req.query;
@@ -308,7 +469,9 @@ async function getProjectById(req, res) {
       l.name AS language_name,
       c.client_name,
       c.client_code,
-      co.name AS country_name
+      co.name AS country_name,
+      DATE_FORMAT(p.start_date, '%Y-%m-%d') AS start_date,
+      DATE_FORMAT(p.end_date, '%Y-%m-%d') AS end_date
     FROM projects p
     LEFT JOIN group_projects gp ON p.group_project_id = gp.project_id
     INNER JOIN clients c ON p.client_id = c.client_id
@@ -331,6 +494,7 @@ async function getProjectById(req, res) {
     res.status(500).json({ message: "Internal server error", status: "error" });
   }
 }
+
 
 async function getProjectStatusCounts(req, res) {
   try {
@@ -1047,5 +1211,6 @@ module.exports = {
   getProjectSurveyLinks,
   updateSupplierInProject,
   updateChildProjectStatus,
-  cloneProjectDetails
+  cloneProjectDetails,
+  cloneCreateProject
 };

@@ -117,7 +117,7 @@ const downloadProjectReport = async (req, res) => {
        JOIN suppliers s ON pr.supplier_id = s.supplier_id
        JOIN projects p ON pr.project_id = p.project_id
        JOIN countries c ON pr.country_code = c.code
-       WHERE pr.project_id = ?`,
+       WHERE pr.project_id = ? ORDER BY created_at DESC`,
       [project_id]
     );
 
@@ -267,9 +267,9 @@ const downloadProjectReport = async (req, res) => {
           row.project_cpi,
           row.supplier_cpi,
           LINK_STATUS_KEY[row.status] || row.status, // Use corrected mapping
-          row.failure_reason,
-          row.start_date_time,
-          row.end_date_time,
+            row.failure_reason,
+            row.start_date_time ? moment(row.start_date_time).format("YYYY-MM-DD HH:mm:ss") : "", // Format start date and time or show empty string
+            row.end_date_time ? moment(row.end_date_time).format("YYYY-MM-DD HH:mm:ss") : "", // Format end date and time or show empty string
           row.loi,
           row.ip_address,
           row.country,
